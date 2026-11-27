@@ -1,0 +1,27 @@
+# Dipendenze e build temporanee
+node_modules/
+dist/
+dev-dist/
+.vite/
+
+# PRIVACY DATI AZIENDALI - NON caricare MAI su GitHub!
+# Cartella profilo browser locale e backup esportati
+data/
+nodejs/
+brewpanda_all_data_backup*.json
+brewpanda_backup_*.json
+*.backup.json
+
+# Variabili d'ambiente e segreti locali
+.env
+.env.*
+!.env.example
+
+# File di sistema / editor / log
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+
+# Nota: app_dist/ viene mantenuta nel repository così il pacchetto resta
+# immediatamente avviabile anche in locale tramite 1_AVVIA_BREW_PANDA.bat (PC/USB).
