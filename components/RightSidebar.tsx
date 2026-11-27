@@ -95,7 +95,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       )}
 
       <aside
-        className={`fixed inset-y-0 right-0 z-40 w-72 max-w-[85vw] bg-brew-dark flex-shrink-0 flex flex-col border-l border-slate-700 p-3 overflow-y-auto transition-transform duration-200 ease-out xl:static xl:z-auto xl:w-60 xl:translate-x-0 ${
+        className={`fixed inset-y-0 right-0 z-40 w-72 max-w-[85vw] bg-brew-dark flex-shrink-0 flex flex-col border-l border-slate-700 p-3 pb-28 xl:pb-4 overflow-y-auto transition-transform duration-200 ease-out xl:static xl:z-auto xl:w-60 xl:translate-x-0 ${
           isOpen ? 'translate-x-0 flex' : 'translate-x-full hidden xl:hidden'
         }`}
       >

@@ -72,6 +72,9 @@ export default function App() {
     const [isRightSidebarOpen, setRightSidebarOpen] = useState<boolean>(() =>
         typeof window !== 'undefined' ? window.innerWidth >= 1280 : true
     );
+    const [isMobileSearchOpen, setMobileSearchOpen] = useState(false);
+    const isNetlifyHost =
+        typeof window !== 'undefined' && window.location.hostname.endsWith('.netlify.app');
     const [lottoActionModal, setLottoActionModal] = useState<{ isOpen: boolean, lottoId: string | null }>({ isOpen: false, lottoId: null });
     const [isLoading, setIsLoading] = useState(true);
     const [loadingMessage, setLoadingMessage] = useState('Caricamento Brew Panda...');
@@ -432,7 +435,7 @@ export default function App() {
     }
     
     return (
-        <div className="flex h-screen bg-brew-dark text-brew-light font-sans overflow-hidden">
+        <div className="flex h-screen supports-[height:100dvh]:h-[100dvh] bg-brew-dark text-brew-light font-sans overflow-hidden">
             <Sidebar
                 isOpen={isLeftSidebarOpen}
                 onClose={() => setLeftSidebarOpen(false)}
@@ -461,33 +464,133 @@ export default function App() {
                     isRightSidebarOpen={isRightSidebarOpen}
                     onToggleLeftSidebar={() => setLeftSidebarOpen(prev => !prev)}
                     onToggleRightSidebar={() => setRightSidebarOpen(prev => !prev)}
+                    isMobileSearchOpen={isMobileSearchOpen}
+                    onToggleMobileSearch={() => setMobileSearchOpen(prev => !prev)}
                 />
+                {isMobileSearchOpen && (
+                    <div className="lg:hidden bg-brew-dark px-3 py-2.5 border-b border-slate-700 space-y-2 shadow-lg flex-shrink-0">
+                        <div className="flex items-center gap-2">
+                            <label htmlFor="search-mobile-top" className="text-xs font-semibold whitespace-nowrap min-w-[96px]">{t('footer.searchMovement')}:</label>
+                            <input
+                                id="search-mobile-top"
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        setActiveView('MOVEMENTS');
+                                        setMobileSearchOpen(false);
+                                    }
+                                }}
+                                placeholder="Cerca movimento..."
+                                className="bg-brew-dark-secondary px-2.5 py-2 rounded-md text-sm flex-1 min-w-0 min-h-[40px] focus:ring-2 focus:ring-brew-accent focus:outline-none"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveView('MOVEMENTS');
+                                    setMobileSearchOpen(false);
+                                }}
+                                className="px-3.5 py-2 min-h-[40px] bg-brew-blue rounded-md text-sm font-bold hover:bg-opacity-80"
+                            >
+                                🔍
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <label htmlFor="lottoSearch-mobile-top" className="text-xs font-semibold whitespace-nowrap min-w-[96px]">{t('footer.openLotto')}:</label>
+                            <input
+                                id="lottoSearch-mobile-top"
+                                type="text"
+                                value={lottoSearchTerm}
+                                onChange={(e) => setLottoSearchTerm(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        handleLottoSearch();
+                                        setMobileSearchOpen(false);
+                                    }
+                                }}
+                                placeholder="Es. L26-01"
+                                className="bg-yellow-100 text-slate-900 px-2.5 py-2 rounded-md text-sm flex-1 min-w-0 min-h-[40px] focus:ring-2 focus:ring-brew-orange focus:outline-none"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    handleLottoSearch();
+                                    setMobileSearchOpen(false);
+                                }}
+                                className="px-3.5 py-2 min-h-[40px] bg-brew-orange rounded-md text-sm font-bold hover:bg-opacity-80"
+                            >
+                                {t('footer.open')}
+                            </button>
+                        </div>
+                    </div>
+                )}
                 <OfflineIndicator />
-                <div className="flex-1 p-2.5 sm:p-5 lg:p-6 overflow-y-auto bg-brew-dark-secondary">
+                <div className="flex-1 p-2.5 sm:p-5 lg:p-6 pb-28 lg:pb-8 overflow-y-auto bg-brew-dark-secondary">
                     {renderView()}
+                    {!isMobileSearchOpen && (
+                        <div className="lg:hidden mt-6 bg-brew-dark p-3 rounded-xl border border-slate-700 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 shadow">
+                            <div className="flex items-center gap-2">
+                                <label htmlFor="search-mobile-bottom" className="text-xs font-semibold whitespace-nowrap">{t('footer.searchMovement')}:</label>
+                                <input
+                                    id="search-mobile-bottom"
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && setActiveView('MOVEMENTS')}
+                                    className="bg-brew-dark-secondary p-2 rounded-md text-sm flex-1 min-w-0 min-h-[40px] focus:ring-2 focus:ring-brew-accent focus:outline-none"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveView('MOVEMENTS')}
+                                    className="px-3.5 py-2 min-h-[40px] bg-brew-blue rounded-md text-sm font-bold hover:bg-opacity-80"
+                                >
+                                    🔍
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <label htmlFor="lottoSearch-mobile-bottom" className="text-xs font-semibold whitespace-nowrap">{t('footer.openLotto')}:</label>
+                                <input
+                                    id="lottoSearch-mobile-bottom"
+                                    type="text"
+                                    value={lottoSearchTerm}
+                                    onChange={(e) => setLottoSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleLottoSearch()}
+                                    className="bg-yellow-100 text-slate-900 p-2 rounded-md text-sm flex-1 min-w-0 min-h-[40px] focus:ring-2 focus:ring-brew-orange focus:outline-none"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={handleLottoSearch}
+                                    className="px-3.5 py-2 min-h-[40px] bg-brew-orange rounded-md text-sm font-bold hover:bg-opacity-80"
+                                >
+                                    {t('footer.open')}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
-                <footer className="bg-brew-dark px-3 py-2 border-t border-slate-700 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2 sm:gap-4 flex-shrink-0">
+                <footer className={`hidden lg:flex bg-brew-dark px-3 py-2 border-t border-slate-700 justify-between items-center flex-wrap gap-4 flex-shrink-0 ${isNetlifyHost ? 'pb-14' : ''}`}>
                     <div className="flex items-center gap-2">
-                        <label htmlFor="search" className="text-xs sm:text-sm font-semibold whitespace-nowrap">{t('footer.searchMovement')}:</label>
+                        <label htmlFor="search" className="text-sm font-semibold whitespace-nowrap">{t('footer.searchMovement')}:</label>
                         <input
                             id="search"
                             type="text"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && setActiveView('MOVEMENTS')}
-                            className="bg-brew-dark-secondary p-1.5 rounded-md text-sm flex-1 sm:flex-none sm:w-40 min-w-0 focus:ring-2 focus:ring-brew-accent focus:outline-none"
+                            className="bg-brew-dark-secondary p-1.5 rounded-md text-sm w-40 min-w-0 focus:ring-2 focus:ring-brew-accent focus:outline-none"
                         />
                          <button onClick={() => setActiveView('MOVEMENTS')} className="px-3 py-1.5 min-h-[36px] bg-brew-blue rounded-md text-sm font-bold hover:bg-opacity-80">🔍</button>
                     </div>
                     <div className="flex items-center gap-2">
-                         <label htmlFor="lottoSearch" className="text-xs sm:text-sm font-semibold whitespace-nowrap">{t('footer.openLotto')}:</label>
+                         <label htmlFor="lottoSearch" className="text-sm font-semibold whitespace-nowrap">{t('footer.openLotto')}:</label>
                          <input
                             id="lottoSearch"
                             type="text"
                             value={lottoSearchTerm}
                             onChange={(e) => setLottoSearchTerm(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleLottoSearch()}
-                            className="bg-yellow-100 text-slate-900 p-1.5 rounded-md text-sm flex-1 sm:flex-none sm:w-40 min-w-0 focus:ring-2 focus:ring-brew-orange focus:outline-none"
+                            className="bg-yellow-100 text-slate-900 p-1.5 rounded-md text-sm w-40 min-w-0 focus:ring-2 focus:ring-brew-orange focus:outline-none"
                         />
                         <button onClick={handleLottoSearch} className="px-3 py-1.5 min-h-[36px] bg-brew-orange rounded-md text-sm font-bold hover:bg-opacity-80">{t('footer.open')}</button>
                     </div>

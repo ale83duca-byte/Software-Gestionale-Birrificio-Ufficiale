@@ -3,6 +3,7 @@ import { useTranslation } from '../i18n';
 import {
   Bars3Icon,
   ChartBarIcon,
+  MagnifyingGlassIcon,
   QuestionMarkCircleIcon,
 } from './icons';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -15,6 +16,8 @@ interface HeaderProps {
   isRightSidebarOpen: boolean;
   onToggleLeftSidebar: () => void;
   onToggleRightSidebar: () => void;
+  isMobileSearchOpen?: boolean;
+  onToggleMobileSearch?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,6 +28,8 @@ export const Header: React.FC<HeaderProps> = ({
   isRightSidebarOpen,
   onToggleLeftSidebar,
   onToggleRightSidebar,
+  isMobileSearchOpen = false,
+  onToggleMobileSearch,
 }) => {
   const { t, changeLanguage, locale } = useTranslation();
 
@@ -92,8 +97,26 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Destra: Installa App + Guida + Toggle Commerciale */}
+      {/* Destra: Ricerca Mobile + Installa App + Guida + Toggle Commerciale */}
       <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+        {onToggleMobileSearch && (
+          <button
+            type="button"
+            onClick={onToggleMobileSearch}
+            aria-expanded={isMobileSearchOpen}
+            aria-label="Cerca movimento o apri lotto"
+            title="Cerca Movimento / Apri Lotto"
+            className={`lg:hidden min-w-[40px] min-h-[40px] px-2 rounded-lg border flex items-center gap-1 text-xs font-extrabold transition-colors ${
+              isMobileSearchOpen
+                ? 'bg-brew-orange text-white border-brew-orange'
+                : 'bg-brew-dark-secondary border-slate-600 text-brew-light hover:border-brew-accent'
+            }`}
+          >
+            <MagnifyingGlassIcon className="w-4 h-4 flex-shrink-0" />
+            <span className="hidden sm:inline">Cerca</span>
+          </button>
+        )}
+
         <PWAInstallButton variant="header" />
 
         {onOpenHelp && (
