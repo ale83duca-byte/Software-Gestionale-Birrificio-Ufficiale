@@ -32,7 +32,14 @@ const BeerRecipeModal: React.FC<{
     warehouseDb: DatabaseItem[];
 }> = ({ isOpen, onClose, selectedYear, clienteId, beerToEdit, warehouseDb }) => {
     const { showToast } = useToast();
-    const [beerDetails, setBeerDetails] = useState({ nomeBirra: '', tipologia: '', platoIniziale: '', litriBatchBase: '1000' });
+    const [beerDetails, setBeerDetails] = useState({
+        nomeBirra: '',
+        tipologia: '',
+        platoIniziale: '',
+        litriBatchBase: '1000',
+        gradoAlcolicoPrevisto: '',
+        zuccheroRifermentazioneGL: '',
+    });
     const [ricetta, setRicetta] = useState<(Omit<RecipeIngredient, 'qta'> & { qta: string | number; unita: IngredientUnit; uiId: number })[]>([]);
 
     useEffect(() => {
@@ -42,6 +49,12 @@ const BeerRecipeModal: React.FC<{
                 tipologia: beerToEdit.tipologia,
                 platoIniziale: beerToEdit.platoIniziale,
                 litriBatchBase: String(beerToEdit.litriBatchBase || 1000),
+                gradoAlcolicoPrevisto: beerToEdit.gradoAlcolicoPrevisto !== undefined && beerToEdit.gradoAlcolicoPrevisto > 0
+                    ? String(beerToEdit.gradoAlcolicoPrevisto)
+                    : '',
+                zuccheroRifermentazioneGL: beerToEdit.zuccheroRifermentazioneGL !== undefined && beerToEdit.zuccheroRifermentazioneGL > 0
+                    ? String(beerToEdit.zuccheroRifermentazioneGL)
+                    : '',
             });
             setRicetta((beerToEdit.ricetta || []).map(r => ({
                 ...r,
@@ -50,13 +63,25 @@ const BeerRecipeModal: React.FC<{
                 uiId: Date.now() + Math.random(),
             })));
         } else {
-            setBeerDetails({ nomeBirra: '', tipologia: '', platoIniziale: '', litriBatchBase: '1000' });
+            setBeerDetails({
+                nomeBirra: '',
+                tipologia: '',
+                platoIniziale: '',
+                litriBatchBase: '1000',
+                gradoAlcolicoPrevisto: '',
+                zuccheroRifermentazioneGL: '',
+            });
             setRicetta([]);
         }
     }, [beerToEdit]);
 
     const handleDetailChange = (field: keyof typeof beerDetails, value: string) => {
-        if (field === 'litriBatchBase' && value !== '' && !/^[0-9]*[.,]?[0-9]*$/.test(value)) return;
+        const numericFields: Array<keyof typeof beerDetails> = [
+            'litriBatchBase',
+            'gradoAlcolicoPrevisto',
+            'zuccheroRifermentazioneGL',
+        ];
+        if (numericFields.includes(field) && value !== '' && !/^[0-9]*[.,]?[0-9]*$/.test(value)) return;
         setBeerDetails(prev => ({ ...prev, [field]: value }));
     };
 
@@ -77,6 +102,19 @@ const BeerRecipeModal: React.FC<{
     const handleSave = async () => {
         if (!beerDetails.nomeBirra.trim() || !beerDetails.tipologia.trim() || !beerDetails.platoIniziale.trim()) {
             showToast("Nome, tipologia e grado Plato della birra sono obbligatori.", 'error');
+            return;
+        }
+
+        const expectedAbv = parseFloat(beerDetails.gradoAlcolicoPrevisto.replace(',', '.'));
+        if (isNaN(expectedAbv) || expectedAbv <= 0 || expectedAbv > 30) {
+            showToast("Inserisci il grado alcolico previsto da ricetta e riportato in etichetta (% ABV).", 'error');
+            return;
+        }
+
+        const sugarGLRaw = beerDetails.zuccheroRifermentazioneGL.trim();
+        const sugarGL = sugarGLRaw !== '' ? parseFloat(sugarGLRaw.replace(',', '.')) : undefined;
+        if (sugarGL !== undefined && (isNaN(sugarGL) || sugarGL < 0)) {
+            showToast("I g/L di zucchero per rifermentazione devono essere un numero valido (>= 0).", 'error');
             return;
         }
 
@@ -102,6 +140,8 @@ const BeerRecipeModal: React.FC<{
             tipologia: beerDetails.tipologia.trim(),
             platoIniziale: beerDetails.platoIniziale.trim(),
             litriBatchBase: baseLiters,
+            gradoAlcolicoPrevisto: Math.round(expectedAbv * 100) / 100,
+            zuccheroRifermentazioneGL: sugarGL !== undefined && sugarGL > 0 ? Math.round(sugarGL * 100) / 100 : undefined,
             ricetta: ricettaToSave,
         };
         
@@ -122,11 +162,35 @@ const BeerRecipeModal: React.FC<{
     return (
         <Modal title={beerToEdit ? `Modifica Ricetta: ${beerToEdit.nomeBirra}` : "Aggiungi Nuova Birra"} isOpen={isOpen} onClose={onClose} size="3xl">
             <div className="space-y-6">
-                <div className="bg-brew-dark p-4 rounded-lg grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <Field label="Nome Birra"><Input value={beerDetails.nomeBirra} onChange={e => handleDetailChange('nomeBirra', e.target.value)} required/></Field>
-                    <Field label="Tipologia"><Input value={beerDetails.tipologia} onChange={e => handleDetailChange('tipologia', e.target.value)} required/></Field>
-                    <Field label="Grado Plato (°P)"><Input value={beerDetails.platoIniziale} onChange={e => handleDetailChange('platoIniziale', e.target.value)} required/></Field>
-                    <Field label="Litri Base Ricetta (L)"><Input value={beerDetails.litriBatchBase} onChange={e => handleDetailChange('litriBatchBase', e.target.value)} placeholder="1000" required/></Field>
+                <div className="bg-brew-dark p-4 rounded-lg grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <Field label="Nome Birra *"><Input value={beerDetails.nomeBirra} onChange={e => handleDetailChange('nomeBirra', e.target.value)} required/></Field>
+                    <Field label="Tipologia *"><Input value={beerDetails.tipologia} onChange={e => handleDetailChange('tipologia', e.target.value)} required/></Field>
+                    <Field label="Grado Plato OG (°P) *"><Input value={beerDetails.platoIniziale} onChange={e => handleDetailChange('platoIniziale', e.target.value)} required/></Field>
+                    <Field label="Litri Base Ricetta (L) *"><Input value={beerDetails.litriBatchBase} onChange={e => handleDetailChange('litriBatchBase', e.target.value)} placeholder="1000" required/></Field>
+                    <Field label="Grado Alcolico Etichetta (% ABV) *">
+                        <Input
+                            value={beerDetails.gradoAlcolicoPrevisto}
+                            onChange={e => handleDetailChange('gradoAlcolicoPrevisto', e.target.value)}
+                            placeholder="Es. 5.2"
+                            required
+                        />
+                    </Field>
+                    <Field label="Zucchero Rifermentazione (g/L)">
+                        <Input
+                            value={beerDetails.zuccheroRifermentazioneGL}
+                            onChange={e => handleDetailChange('zuccheroRifermentazioneGL', e.target.value)}
+                            placeholder="Es. 6.0 (opzionale)"
+                        />
+                        <p className="text-[11px] text-slate-400 mt-1">
+                            Attivo solo in lavorazione Rifermentata; ignorato se Isobarico.
+                            {(() => {
+                                const g = parseFloat(beerDetails.zuccheroRifermentazioneGL.replace(',', '.'));
+                                return !isNaN(g) && g > 0 ? (
+                                    <span className="text-amber-300 font-semibold"> (+{(g / 16).toFixed(2)}% vol stimati)</span>
+                                ) : null;
+                            })()}
+                        </p>
+                    </Field>
                 </div>
                 
                 <div className="space-y-4">
@@ -574,15 +638,31 @@ export const DatabaseView: React.FC<DatabaseViewProps> = ({ selectedYear }) => {
                              {associatedBeers.map(birra => (
                                 <div key={birra.id} className="flex justify-between items-center bg-brew-dark p-2.5 rounded-md mb-2 border border-slate-700/60">
                                     <div>
-                                        <p className="font-bold text-white">{birra.nomeBirra}</p>
-                                        <p className="text-xs text-slate-400">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <p className="font-bold text-white">{birra.nomeBirra}</p>
+                                            {birra.gradoAlcolicoPrevisto !== undefined && birra.gradoAlcolicoPrevisto > 0 ? (
+                                                <span className="px-2 py-0.5 text-[11px] font-bold rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono tabular-nums">
+                                                    ABV Etichetta: {birra.gradoAlcolicoPrevisto.toFixed(1)}% vol
+                                                </span>
+                                            ) : (
+                                                <span className="px-2 py-0.5 text-[11px] font-bold rounded bg-red-500/15 text-red-300 border border-red-500/40">
+                                                    ABV Etichetta non impostato
+                                                </span>
+                                            )}
+                                            {birra.zuccheroRifermentazioneGL !== undefined && birra.zuccheroRifermentazioneGL > 0 && (
+                                                <span className="px-2 py-0.5 text-[11px] font-semibold rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono tabular-nums">
+                                                    Riferment.: {birra.zuccheroRifermentazioneGL} g/L
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="text-xs text-slate-400 mt-0.5">
                                             {birra.tipologia} • {birra.platoIniziale}°P • Ricetta base: {birra.litriBatchBase || 1000} L
                                             {birra.ricetta ? ` (${birra.ricetta.length} ingr.)` : ''}
                                         </p>
                                     </div>
                                     <div className="flex items-center gap-4">
-                                        <button onClick={() => handleOpenEditBeerModal(birra)} className="text-brew-blue hover:text-blue-400"><PencilIcon className="w-5 h-5"/></button>
-                                        <button onClick={() => handleDeleteRequest('birra', birra.id)} className="text-red-500/70 hover:text-red-500"><TrashIcon className="w-5 h-5"/></button>
+                                        <button onClick={() => handleOpenEditBeerModal(birra)} className="text-brew-blue hover:text-blue-400" title="Modifica birra e ricetta"><PencilIcon className="w-5 h-5"/></button>
+                                        <button onClick={() => handleDeleteRequest('birra', birra.id)} className="text-red-500/70 hover:text-red-500" title="Elimina birra"><TrashIcon className="w-5 h-5"/></button>
                                     </div>
                                 </div>
                              ))}

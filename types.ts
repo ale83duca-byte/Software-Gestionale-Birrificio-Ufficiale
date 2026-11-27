@@ -103,6 +103,10 @@ export interface BrewHeader {
   bbtTransferDate?: string;
   // Prezzi di vendita/mercato personalizzati per formato su questo specifico lotto (€/pz)
   lotSellingPrices?: Record<string, number>;
+  // Target gradazione alcolica da ricetta / etichetta e gestione rifermentazione vs isobarico
+  targetAbv?: string;
+  carbonationMode?: 'ISOBARICO' | 'RIFERMENTATO';
+  refermentationSugarGL?: string;
 }
 
 export interface FermentationDataPoint {
@@ -171,6 +175,8 @@ export interface Birra {
   tipologia: string;
   platoIniziale: string;
   litriBatchBase?: number;
+  gradoAlcolicoPrevisto?: number; // % ABV previsto da ricetta e riportato in etichetta
+  zuccheroRifermentazioneGL?: number; // g/L zucchero per rifermentazione (opzionale, ignorato in isobarico)
   ricetta?: RecipeIngredient[];
 }
 

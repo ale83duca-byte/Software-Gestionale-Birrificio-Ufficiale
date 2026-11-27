@@ -73,6 +73,38 @@ export const calculateBrewMetrics = (
     };
 };
 
+export const ABV_TOLERANCE_PERCENT = 0.5;
+
+export const parseNumericInput = (v: number | string | undefined): number => {
+    if (typeof v === 'number') return isFinite(v) ? v : NaN;
+    if (v === undefined || v === null) return NaN;
+    const trimmed = String(v).trim();
+    if (!trimmed) return NaN;
+    return parseFloat(trimmed.replace(',', '.'));
+};
+
+/**
+ * Calcola il contributo alcolico (% ABV) apportato dallo zucchero di rifermentazione secondaria (g/L).
+ * Rapporto stechiometrico pratico birrario: ~16 g/L di zucchero fermentescibile = +1.00% vol (0.0625% vol per g/L).
+ */
+export const calculateRefermentationAbv = (gramsPerLiterInput: number | string | undefined): number => {
+    const gPerL = parseNumericInput(gramsPerLiterInput);
+    if (isNaN(gPerL) || gPerL <= 0) return 0;
+    return gPerL / 16;
+};
+
+/**
+ * Calcola i kg totali di zucchero da usare/scaricare in base ai g/L impostati e ai litri effettivi confezionati.
+ */
+export const calculatePrimingSugarKg = (
+    gramsPerLiterInput: number | string | undefined,
+    liters: number
+): number => {
+    const gPerL = parseNumericInput(gramsPerLiterInput);
+    if (isNaN(gPerL) || gPerL <= 0 || !isFinite(liters) || liters <= 0) return 0;
+    return Math.round(((gPerL * liters) / 1000 + Number.EPSILON) * 1000) / 1000;
+};
+
 export interface YeastLineageNode {
     lotto: string;
     birra: string;

@@ -20,6 +20,7 @@ import {
     DEFAULT_KEG_FLEET_CONFIG,
     parseSteelKegFormat,
 } from '../services/dataService';
+import type { MergedConsumedIngredientRow } from './ingredientGroupingEngine';
 
 const headerStyle = { font: { bold: true, color: { rgb: "ECF0F1" } }, fill: { fgColor: { rgb: "34495e" } }, alignment: { horizontal: 'center' } };
 const titleStyle = { font: { bold: true, sz: 18 }, alignment: { horizontal: 'center' } };
@@ -1235,4 +1236,61 @@ export const exportAllDataToExcel = (allData: Record<string, BreweryData>) => {
     });
 
     XLSX.writeFile(wb, `brewpanda_all_data_backup_${new Date().toISOString().slice(0, 10)}.xlsx`);
+};
+
+export const exportAnnualIngredientsConsumptionToExcel = (
+    rows: MergedConsumedIngredientRow[],
+    year: string,
+    profile?: BreweryProfile
+) => {
+    const wb = XLSX.utils.book_new();
+    const effectiveProfile = profile || getEffectiveBreweryProfile(null);
+    const aoa: (string | number | null)[][] = [];
+    const styles: Record<string, any> = {};
+    const merges: XLSX.Range[] = [];
+    const headers = [
+        'Categoria',
+        'Ingrediente (Voce Unificata)',
+        'Quantità Totale Utilizzata',
+        'Lotti Impiegati (Aperti + Chiusi)',
+        'Costo Stimato Annuo (€)',
+        'Voci Magazzino Accorpate / Dettaglio',
+    ];
+
+    addDossierHeaderBlock(
+        aoa,
+        styles,
+        merges,
+        headers.length,
+        effectiveProfile,
+        'RESOCONTO INGREDIENTI UTILIZZATI ANNUI (APPROVVIGIONAMENTO STOCK)',
+        year
+    );
+    addTableHeader(aoa, styles, headers);
+
+    if (rows.length === 0) {
+        aoa.push(['Nessun consumo ingredienti registrato nei fogli cotta per questo anno.']);
+    } else {
+        rows.forEach(r => {
+            const breakdown = r.isMerged
+                ? r.constituents.map(c => `${c.nome}: ${c.totalQty.toFixed(2)}`).join(' + ')
+                : r.constituents[0]?.nome || r.displayName;
+            aoa.push([
+                r.tipologia,
+                r.displayName,
+                safeRound2(r.totalQty),
+                `${r.lottiCount} (Aperti: ${r.openLotsCount}, Chiusi: ${r.closedLotsCount})`,
+                safeRound2(r.estimatedCost),
+                breakdown,
+            ]);
+        });
+        const totalCost = safeRound2(rows.reduce((s, r) => s + r.estimatedCost, 0));
+        const totRow = aoa.length + 1;
+        aoa.push([null, 'TOTALE VALORE MATERIE PRIME CONSUMATE:', null, null, totalCost, `${rows.length} voci in resoconto`]);
+        styles[`B${totRow}`] = totalRowLabelStyle;
+        styles[`E${totRow}`] = totalRowValueStyle;
+    }
+
+    appendStyledDossierSheet(wb, `Consumo_Ingr_${year}`, aoa, styles, merges, 'landscape');
+    XLSX.writeFile(wb, `resoconto_ingredienti_utilizzati_${year}.xlsx`);
 };

@@ -11,7 +11,14 @@ import { useToast } from '../hooks/useToast';
 import { exportBrewSheetToExcel } from '../utils/excelExport';
 import { useTranslation } from '../i18n';
 import { parseItalianDate } from '../utils/dateUtils';
-import { calculateBrewMetrics, buildYeastGenealogy } from '../utils/brewingCalculations';
+import {
+    calculateBrewMetrics,
+    buildYeastGenealogy,
+    calculateRefermentationAbv,
+    calculatePrimingSugarKg,
+    parseNumericInput,
+    ABV_TOLERANCE_PERCENT,
+} from '../utils/brewingCalculations';
 
 interface BrewPageProps {
     selectedYear: string;
@@ -38,6 +45,9 @@ const initialHeaderState: BrewHeader = {
     dryHopDate: '',
     coldCrashDate: '',
     bbtTransferDate: '',
+    targetAbv: '',
+    carbonationMode: 'ISOBARICO',
+    refermentationSugarGL: '',
 };
 
 interface IngredientRowState {
@@ -324,6 +334,13 @@ const BrewPage: React.FC<BrewPageProps> = ({
                 NOTE: initialPlannedBrew.note || '',
                 PLATO_INIZIALE: birraSelezionata?.platoIniziale || '',
                 TIPO_BIRRA: birraSelezionata?.tipologia || '',
+                targetAbv: birraSelezionata?.gradoAlcolicoPrevisto !== undefined && birraSelezionata.gradoAlcolicoPrevisto > 0
+                    ? String(birraSelezionata.gradoAlcolicoPrevisto)
+                    : '',
+                carbonationMode: 'ISOBARICO',
+                refermentationSugarGL: birraSelezionata?.zuccheroRifermentazioneGL !== undefined && birraSelezionata.zuccheroRifermentazioneGL > 0
+                    ? String(birraSelezionata.zuccheroRifermentazioneGL)
+                    : '',
             });
             setAllowOccupiedFermenter(false);
 
@@ -379,7 +396,13 @@ const BrewPage: React.FC<BrewPageProps> = ({
              return;
         }
         
-        const isNumeric = field === 'PLATO_INIZIALE' || field === 'PLATO_FINALE' || field === 'PLATO_FISCALE' || field === 'LITRI_FINALI';
+        const isNumeric =
+            field === 'PLATO_INIZIALE' ||
+            field === 'PLATO_FINALE' ||
+            field === 'PLATO_FISCALE' ||
+            field === 'LITRI_FINALI' ||
+            field === 'targetAbv' ||
+            field === 'refermentationSugarGL';
         const isInteger = field === 'GIORNI_FERMENTAZIONE_PREVISTI';
         const isCounter = [
             'mustCounterPrevious', 'mustCounterMeasured',
@@ -400,7 +423,9 @@ const BrewPage: React.FC<BrewPageProps> = ({
             CLIENTE: clienteNome,
             NOME_BIRRA: '',
             TIPO_BIRRA: '',
-            PLATO_INIZIALE: ''
+            PLATO_INIZIALE: '',
+            targetAbv: '',
+            refermentationSugarGL: '',
         }));
         setIngredients([]);
     };
@@ -419,6 +444,12 @@ const BrewPage: React.FC<BrewPageProps> = ({
                 TIPO_BIRRA: birraSelezionata.tipologia,
                 PLATO_INIZIALE: birraSelezionata.platoIniziale,
                 LITRI_FINALI: effectiveLitersStr,
+                targetAbv: birraSelezionata.gradoAlcolicoPrevisto !== undefined && birraSelezionata.gradoAlcolicoPrevisto > 0
+                    ? String(birraSelezionata.gradoAlcolicoPrevisto)
+                    : prev.targetAbv || '',
+                refermentationSugarGL: birraSelezionata.zuccheroRifermentazioneGL !== undefined && birraSelezionata.zuccheroRifermentazioneGL > 0
+                    ? String(birraSelezionata.zuccheroRifermentazioneGL)
+                    : '',
             }));
             if (birraSelezionata.ricetta && birraSelezionata.ricetta.length > 0) {
                 setIngredients(buildScaledRowsFromBeer(birraSelezionata, effectiveLitersStr));
@@ -737,6 +768,156 @@ const BrewPage: React.FC<BrewPageProps> = ({
     const brewMetrics = useMemo(() => {
         return calculateBrewMetrics(header.PLATO_INIZIALE, effectiveFinalPlato);
     }, [header.PLATO_INIZIALE, effectiveFinalPlato]);
+
+    const carbonationMode: 'ISOBARICO' | 'RIFERMENTATO' =
+        header.carbonationMode === 'RIFERMENTATO' ? 'RIFERMENTATO' : 'ISOBARICO';
+
+    const effectiveTargetAbvStr = useMemo(() => {
+        if (header.targetAbv !== undefined && header.targetAbv.trim() !== '') {
+            return header.targetAbv;
+        }
+        if (selectedRecipeBeer?.gradoAlcolicoPrevisto && selectedRecipeBeer.gradoAlcolicoPrevisto > 0) {
+            return String(selectedRecipeBeer.gradoAlcolicoPrevisto);
+        }
+        return '';
+    }, [header.targetAbv, selectedRecipeBeer]);
+
+    const effectiveTargetAbvNum = useMemo(() => {
+        const parsed = parseNumericInput(effectiveTargetAbvStr);
+        return !isNaN(parsed) && parsed > 0 ? parsed : null;
+    }, [effectiveTargetAbvStr]);
+
+    const effectiveSugarGLStr = useMemo(() => {
+        if (header.refermentationSugarGL !== undefined && header.refermentationSugarGL !== '') {
+            return header.refermentationSugarGL;
+        }
+        if (selectedRecipeBeer?.zuccheroRifermentazioneGL && selectedRecipeBeer.zuccheroRifermentazioneGL > 0) {
+            return String(selectedRecipeBeer.zuccheroRifermentazioneGL);
+        }
+        return '';
+    }, [header.refermentationSugarGL, selectedRecipeBeer]);
+
+    const refermentationAbvAdded = useMemo(() => {
+        if (carbonationMode !== 'RIFERMENTATO') return 0;
+        return calculateRefermentationAbv(effectiveSugarGLStr);
+    }, [carbonationMode, effectiveSugarGLStr]);
+
+    const totalEstimatedAbv = useMemo(() => {
+        if (!brewMetrics) return null;
+        return brewMetrics.abv + refermentationAbvAdded;
+    }, [brewMetrics, refermentationAbvAdded]);
+
+    const abvDeviation = useMemo(() => {
+        if (totalEstimatedAbv === null || effectiveTargetAbvNum === null) return null;
+        return totalEstimatedAbv - effectiveTargetAbvNum;
+    }, [totalEstimatedAbv, effectiveTargetAbvNum]);
+
+    const isAbvOutOfTolerance = useMemo(() => {
+        return abvDeviation !== null && Math.abs(abvDeviation) > ABV_TOLERANCE_PERCENT;
+    }, [abvDeviation]);
+
+    const packagedLitersTotal = useMemo(
+        () => packagingData.reduce((sum, pkg) => sum + (pkg.LITRI_TOT || 0), 0),
+        [packagingData]
+    );
+    const brewFinalLitersNum = parseFloat((header.LITRI_FINALI || '').replace(',', '.')) || 0;
+
+    const primingSugarKgPackaged = useMemo(() => {
+        if (carbonationMode !== 'RIFERMENTATO') return 0;
+        return calculatePrimingSugarKg(effectiveSugarGLStr, packagedLitersTotal);
+    }, [carbonationMode, effectiveSugarGLStr, packagedLitersTotal]);
+
+    const primingSugarKgPreviewBrew = useMemo(() => {
+        if (carbonationMode !== 'RIFERMENTATO' || packagedLitersTotal > 0) return 0;
+        return calculatePrimingSugarKg(effectiveSugarGLStr, brewFinalLitersNum);
+    }, [carbonationMode, effectiveSugarGLStr, packagedLitersTotal, brewFinalLitersNum]);
+
+    const handleCarbonationModeChange = (mode: 'ISOBARICO' | 'RIFERMENTATO') => {
+        setHeader(prev => {
+            let nextSugar = prev.refermentationSugarGL;
+            if (
+                mode === 'RIFERMENTATO' &&
+                (!nextSugar || nextSugar.trim() === '') &&
+                selectedRecipeBeer?.zuccheroRifermentazioneGL &&
+                selectedRecipeBeer.zuccheroRifermentazioneGL > 0
+            ) {
+                nextSugar = String(selectedRecipeBeer.zuccheroRifermentazioneGL);
+            }
+            return {
+                ...prev,
+                carbonationMode: mode,
+                refermentationSugarGL: nextSugar,
+            };
+        });
+    };
+
+    const handleApplyPrimingSugarToIngredients = (kgAmount: number) => {
+        if (isLottoClosed || header.isCarriedOver) {
+            showToast("Sblocca il lotto (Rettifica Controllata) per aggiornare gli ingredienti.", 'error');
+            return;
+        }
+        if (kgAmount <= 0) {
+            showToast("Quantità di zucchero pari a 0 kg.", 'error');
+            return;
+        }
+        const formattedQty = kgAmount.toFixed(3).replace(/\.?0+$/, '').replace('.', ',');
+        const sugarWarehouseItems = warehouseStock.filter(
+            w =>
+                w.TIPOLOGIA === 'ADDITIVI' &&
+                /(ZUCCHER|DESTROSI|GLUCOSI|PRIMING|SACCA|CANDIT)/i.test(w.NOME)
+        );
+        const preferredItem = sugarWarehouseItems[0];
+        const preferredName = preferredItem ? preferredItem.NOME : '';
+        const lotsForPreferred = preferredName ? ingredientLotsStock[preferredName.toUpperCase()] || [] : [];
+        const singleLot = lotsForPreferred.length === 1 ? lotsForPreferred[0] : null;
+
+        setIngredients(prev => {
+            const existingIdx = prev.findIndex(
+                ing =>
+                    ing.tipologia === 'ADDITIVI' &&
+                    !ing.gia_scaricato &&
+                    /(ZUCCHER|DESTROSI|GLUCOSI|PRIMING|SACCA|CANDIT)/i.test(ing.nome)
+            );
+            if (existingIdx > -1) {
+                return prev.map((ing, idx) =>
+                    idx === existingIdx
+                        ? { ...ing, qta: formattedQty, unitHint: 'kg (riferment.)' }
+                        : ing
+                );
+            }
+            return [
+                ...prev,
+                {
+                    id: Date.now(),
+                    tipologia: 'ADDITIVI',
+                    nome: preferredName,
+                    lotto_fornitore: singleLot ? singleLot.lotto : '',
+                    marca: singleLot ? singleLot.marca : '',
+                    fornitore: singleLot ? singleLot.fornitore : '',
+                    qta: formattedQty,
+                    gia_scaricato: false,
+                    unitHint: 'kg (riferment.)',
+                },
+            ];
+        });
+
+        if (preferredName && singleLot) {
+            showToast(
+                `Aggiunti ${kgAmount.toFixed(3)} kg di "${preferredName}" (Lotto ${singleLot.lotto}) nella sezione ADDITIVI. Ricorda di salvare la cotta per scaricare il magazzino!`,
+                'success'
+            );
+        } else if (preferredName) {
+            showToast(
+                `Aggiunti ${kgAmount.toFixed(3)} kg di "${preferredName}" in sezione ADDITIVI: seleziona il lotto fornitore e salva la cotta.`,
+                'info'
+            );
+        } else {
+            showToast(
+                `Creata riga da ${kgAmount.toFixed(3)} kg nella sezione ADDITIVI: seleziona lo zucchero da magazzino, il lotto e salva la cotta.`,
+                'info'
+            );
+        }
+    };
 
     const yeastGenealogy = useMemo(() => {
         if (!header.LOTTO && !header.yeastSourceLotto) return { ancestors: [], children: [] };
@@ -1522,14 +1703,114 @@ const BrewPage: React.FC<BrewPageProps> = ({
                         </div>
                     </div>
                     <div className="flex flex-col gap-4">
-                        <div className="bg-brew-dark p-3 rounded-md border border-slate-700/70">
-                            <h4 className="font-semibold text-brew-accent text-sm mb-2">Quadro Analitico Fermentazione (Calcolo ASBC / Balling)</h4>
-                            {brewMetrics ? (
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-mono tabular-nums">
-                                    <div className="bg-brew-dark-secondary p-2 rounded border border-slate-700">
-                                        <div className="text-[10px] text-slate-400 font-sans">Alcol Stimato</div>
-                                        <div className="text-lg font-bold text-brew-accent">{brewMetrics.abv.toFixed(2)}% vol</div>
+                        <div className={`bg-brew-dark p-3 rounded-md border space-y-3 ${isAbvOutOfTolerance ? 'border-red-500 ring-2 ring-red-500/70' : 'border-slate-700/70'}`}>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <h4 className="font-semibold text-brew-accent text-sm">
+                                    Quadro Analitico Fermentazione &amp; Controllo ABV
+                                </h4>
+                                <div className="inline-flex rounded-md border border-slate-600 overflow-hidden text-xs font-bold">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCarbonationModeChange('ISOBARICO')}
+                                        disabled={isLottoClosed}
+                                        className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                                            carbonationMode === 'ISOBARICO'
+                                                ? 'bg-sky-600 text-white'
+                                                : 'bg-brew-dark-secondary text-slate-300 hover:bg-slate-700'
+                                        }`}
+                                    >
+                                        🧊 Isobarico
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCarbonationModeChange('RIFERMENTATO')}
+                                        disabled={isLottoClosed}
+                                        className={`px-3 py-1.5 transition-colors disabled:opacity-50 ${
+                                            carbonationMode === 'RIFERMENTATO'
+                                                ? 'bg-amber-600 text-white'
+                                                : 'bg-brew-dark-secondary text-slate-300 hover:bg-slate-700'
+                                        }`}
+                                    >
+                                        🍾 Rifermentato
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end bg-brew-dark-secondary/60 p-2.5 rounded border border-slate-700/80">
+                                <div>
+                                    <label className="block text-[11px] font-medium text-gray-300 mb-1">
+                                        Target ABV Etichetta (% vol)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={header.targetAbv !== undefined ? header.targetAbv : effectiveTargetAbvStr}
+                                        onChange={e => handleHeaderChange('targetAbv', e.target.value)}
+                                        placeholder="Da ricetta DB"
+                                        disabled={isLottoClosed}
+                                        className="w-full bg-brew-dark p-1.5 rounded border border-slate-600 text-sm font-mono tabular-nums text-amber-300 disabled:opacity-50"
+                                    />
+                                </div>
+                                {carbonationMode === 'RIFERMENTATO' ? (
+                                    <>
+                                        <div>
+                                            <label className="block text-[11px] font-medium text-gray-300 mb-1">
+                                                Zucchero Rifermentazione (g/L)
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={header.refermentationSugarGL !== undefined ? header.refermentationSugarGL : effectiveSugarGLStr}
+                                                onChange={e => handleHeaderChange('refermentationSugarGL', e.target.value)}
+                                                placeholder="Es. 6.0"
+                                                disabled={isLottoClosed}
+                                                className="w-full bg-brew-dark p-1.5 rounded border border-amber-500/60 text-sm font-mono tabular-nums text-emerald-300 disabled:opacity-50"
+                                            />
+                                        </div>
+                                        <div className="text-[11px] text-slate-300 bg-brew-dark p-2 rounded border border-slate-700">
+                                            <div>
+                                                Apporto alcol rif.: <strong className="text-emerald-300 font-mono">+{refermentationAbvAdded.toFixed(2)}% vol</strong>
+                                            </div>
+                                            {effectiveTargetAbvNum !== null && (
+                                                <div className="text-slate-400">
+                                                    Target primario pre-rif.:{' '}
+                                                    <strong className="text-sky-300 font-mono">
+                                                        {Math.max(0, effectiveTargetAbvNum - refermentationAbvAdded).toFixed(2)}%
+                                                    </strong>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="sm:col-span-2 text-[11px] text-slate-400 p-1.5">
+                                        Modalità <strong className="text-sky-300">Isobarico</strong> attiva: l&apos;eventuale zucchero di rifermentazione da ricetta non viene sommato all&apos;alcol né conteggiato negli ingredienti.
                                     </div>
+                                )}
+                            </div>
+
+                            {isAbvOutOfTolerance && abvDeviation !== null && effectiveTargetAbvNum !== null && totalEstimatedAbv !== null && (
+                                <div className="animate-pulse p-2.5 rounded-md bg-red-600/25 border-2 border-red-500 text-red-100 text-xs flex flex-wrap items-center justify-between gap-2 shadow-lg">
+                                    <div className="font-extrabold flex items-center gap-1.5">
+                                        <span>🚨 ALLARME GRADAZIONE ALCOLICA FUORI TARGET (±{ABV_TOLERANCE_PERCENT.toFixed(1)}% vol):</span>
+                                    </div>
+                                    <div className="font-mono tabular-nums font-bold">
+                                        Previsto Etichetta {effectiveTargetAbvNum.toFixed(2)}% vs Reale {totalEstimatedAbv.toFixed(2)}% ({abvDeviation >= 0 ? `+${abvDeviation.toFixed(2)}` : abvDeviation.toFixed(2)}%)
+                                    </div>
+                                </div>
+                            )}
+
+                            {brewMetrics ? (
+                                <div className={`grid gap-2 text-center font-mono tabular-nums ${carbonationMode === 'RIFERMENTATO' ? 'grid-cols-2 sm:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'}`}>
+                                    <div className="bg-brew-dark-secondary p-2 rounded border border-slate-700">
+                                        <div className="text-[10px] text-slate-400 font-sans">ABV Primario</div>
+                                        <div className="text-lg font-bold text-brew-accent">{brewMetrics.abv.toFixed(2)}%</div>
+                                    </div>
+                                    {carbonationMode === 'RIFERMENTATO' && (
+                                        <div className="bg-brew-dark-secondary p-2 rounded border border-amber-500/40">
+                                            <div className="text-[10px] text-amber-300 font-sans">ABV Totale (Prim.+Rif.)</div>
+                                            <div className={`text-lg font-bold ${isAbvOutOfTolerance ? 'text-red-400 animate-pulse' : 'text-emerald-300'}`}>
+                                                {(totalEstimatedAbv ?? brewMetrics.abv).toFixed(2)}%
+                                            </div>
+                                        </div>
+                                    )}
                                     <div className="bg-brew-dark-secondary p-2 rounded border border-slate-700">
                                         <div className="text-[10px] text-slate-400 font-sans">Atten. Apparente</div>
                                         <div className="text-lg font-bold text-emerald-400">{brewMetrics.apparentAttenuation.toFixed(1)}%</div>
@@ -1547,6 +1828,48 @@ const BrewPage: React.FC<BrewPageProps> = ({
                                 <p className="text-xs text-slate-400">
                                     Inserisci il Grado Plato Iniziale (OG) e almeno una lettura di fermentazione (o il Plato Finale FG) per calcolare automaticamente ABV% e Attenuazione%.
                                 </p>
+                            )}
+
+                            {carbonationMode === 'RIFERMENTATO' && (parseNumericInput(effectiveSugarGLStr) || 0) > 0 && (
+                                <div className="p-2.5 rounded-md bg-amber-950/35 border border-amber-500/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                                    <div>
+                                        {packagedLitersTotal > 0 ? (
+                                            <>
+                                                <div className="font-bold text-amber-300">
+                                                    🍬 Zucchero Totale Rifermentazione (su {packagedLitersTotal.toFixed(1)} L confezionati):{' '}
+                                                    <span className="text-white text-sm font-mono">{primingSugarKgPackaged.toFixed(3)} kg</span>{' '}
+                                                    <span className="text-slate-300 font-mono">({(primingSugarKgPackaged * 1000).toFixed(0)} g)</span>
+                                                </div>
+                                                <div className="text-[11px] text-slate-300">
+                                                    Calcolato a {effectiveSugarGLStr} g/L. Premi il pulsante per portarlo nella sezione ADDITIVI e scaricarlo al salvataggio.
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="font-bold text-amber-200">
+                                                    🍬 Stima Zucchero Rifermentazione (su {brewFinalLitersNum.toFixed(1)} L cotti):{' '}
+                                                    <span className="text-white font-mono">{primingSugarKgPreviewBrew.toFixed(3)} kg</span>
+                                                </div>
+                                                <div className="text-[11px] text-slate-400">
+                                                    Il peso esatto in kg verrà aggiornato automaticamente sui litri effettivamente confezionati a fine lavorazione.
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                    {!isLottoClosed && !header.isCarriedOver && (packagedLitersTotal > 0 ? primingSugarKgPackaged : primingSugarKgPreviewBrew) > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                handleApplyPrimingSugarToIngredients(
+                                                    packagedLitersTotal > 0 ? primingSugarKgPackaged : primingSugarKgPreviewBrew
+                                                )
+                                            }
+                                            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded text-xs shadow whitespace-nowrap transition-colors"
+                                        >
+                                            ➕ Carica {(packagedLitersTotal > 0 ? primingSugarKgPackaged : primingSugarKgPreviewBrew).toFixed(3)} kg in ADDITIVI
+                                        </button>
+                                    )}
+                                </div>
                             )}
                         </div>
 
@@ -1581,9 +1904,9 @@ const BrewPage: React.FC<BrewPageProps> = ({
                             </div>
                         </div>
                         <div className="bg-brew-dark p-3 rounded-md flex-grow">
-                             <h4 className="font-semibold mb-2">Diario & Curva Fermentazione</h4>
-                             <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-[210px]">
-                                <div className="lg:col-span-5 max-h-56 overflow-y-auto">
+                             <h4 className="font-semibold mb-2">Diario &amp; Curva Fermentazione</h4>
+                             <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 min-h-[250px]">
+                                <div className="lg:col-span-5 max-h-64 overflow-y-auto">
                                     <table className="w-full text-xs font-mono tabular-nums">
                                         <thead>
                                             <tr className="text-left text-slate-400 border-b border-slate-700">
@@ -1607,8 +1930,16 @@ const BrewPage: React.FC<BrewPageProps> = ({
                                         </tbody>
                                     </table>
                                 </div>
-                                <div className="lg:col-span-7 h-56 bg-slate-800 p-1 rounded-md">
-                                   <FermentationChart data={fermentationData} />
+                                <div className="lg:col-span-7 h-64 bg-slate-800 p-1 rounded-md">
+                                   <FermentationChart
+                                        data={fermentationData}
+                                        ogPlato={header.PLATO_INIZIALE}
+                                        targetAbv={effectiveTargetAbvNum}
+                                        refermentationAbv={refermentationAbvAdded}
+                                        carbonationMode={carbonationMode}
+                                        effectiveTotalAbv={totalEstimatedAbv}
+                                        isAbvOutOfTolerance={isAbvOutOfTolerance}
+                                   />
                                 </div>
                              </div>
                         </div>
@@ -1841,15 +2172,34 @@ const BrewPage: React.FC<BrewPageProps> = ({
                             </table>
                         </div>
                     </div>
-                    <div className="bg-brew-dark p-4 rounded-md text-center flex flex-col justify-center">
-                        <div className="mb-2">
+                    <div className="bg-brew-dark p-4 rounded-md text-center flex flex-col justify-center space-y-3">
+                        <div>
                             <p className="text-sm text-slate-400">TOTALE CONFEZIONATO</p>
                             <p className="text-2xl font-bold text-brew-accent">{totalLitriConfezionati.toFixed(1)} L</p>
                         </div>
-                         <div>
+                        <div>
                             <p className="text-sm text-slate-400">PERDITA / RIMANENZA</p>
                             <p className="text-2xl font-bold">{perdita.toFixed(1)} L</p>
                         </div>
+                        {carbonationMode === 'RIFERMENTATO' && primingSugarKgPackaged > 0 && (
+                            <div className="pt-3 border-t border-slate-700 space-y-1.5">
+                                <p className="text-xs text-amber-300 font-semibold uppercase">
+                                    Zucchero Rifermentazione ({effectiveSugarGLStr} g/L)
+                                </p>
+                                <p className="text-xl font-extrabold text-emerald-300 font-mono">
+                                    {primingSugarKgPackaged.toFixed(3)} kg
+                                </p>
+                                {!isLottoClosed && !header.isCarriedOver && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleApplyPrimingSugarToIngredients(primingSugarKgPackaged)}
+                                        className="w-full px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded text-xs transition-colors"
+                                    >
+                                        ➕ Scarica in ADDITIVI
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
